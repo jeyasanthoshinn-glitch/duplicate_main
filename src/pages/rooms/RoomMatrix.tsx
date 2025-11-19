@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../firebase/config';
 import {
@@ -17,6 +17,7 @@ import { BedDouble, UserCheck, Loader, PenTool as Tool, ShoppingBag, AlarmClock,
 import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';
 import { ShopPurchaseService } from '../shop/ShopPurchaseService';
+import { DataService } from '../../services/dataService';
 
 type Room = {
   id: string;
@@ -81,10 +82,10 @@ const RoomMatrix = () => {
 
   useEffect(() => {
     fetchData();
-    // Refresh room data every 30 seconds to prevent stale state
+    // Refresh room data every 60 seconds (reduced from 30)
     const refreshInterval = setInterval(() => {
       fetchData();
-    }, 30000);
+    }, 60000);
     const checkInterval = setInterval(checkTimedRooms, 60000); // Check every minute
     return () => {
       clearInterval(refreshInterval);
@@ -135,7 +136,12 @@ const RoomMatrix = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const roomsSnapshot = await getDocs(collection(db, 'rooms'));
+      // Fetch rooms and active checkins in parallel
+      const [roomsSnapshot, checkinSnapshot] = await Promise.all([
+        getDocs(collection(db, 'rooms')),
+        getDocs(query(collection(db, 'checkins'), where('isCheckedOut', '==', false)))
+      ]);
+
       const roomList = roomsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -143,25 +149,26 @@ const RoomMatrix = () => {
 
       roomList.sort((a, b) => parseInt(a.roomNumber.toString()) - parseInt(b.roomNumber.toString()));
 
-      const checkinQuery = query(collection(db, 'checkins'), where('isCheckedOut', '==', false));
-      const checkinSnapshot = await getDocs(checkinQuery);
       const activeBookings = checkinSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Booking[];
 
-      const bookingsWithRoomNumber = await Promise.all(
-        activeBookings.map(async (booking) => {
-          const room = roomList.find(r => r.id === booking.roomId);
-          return {
-            ...booking,
-            roomNumber: room?.roomNumber
-          };
-        })
-      );
+      // Create a room lookup map for O(1) access
+      const roomMap = new Map(roomList.map(r => [r.id, r]));
 
+      // Add room numbers to bookings using map lookup
+      const bookingsWithRoomNumber = activeBookings.map(booking => ({
+        ...booking,
+        roomNumber: roomMap.get(booking.roomId)?.roomNumber
+      }));
+
+      // Create booking lookup map for O(1) access
+      const bookingMap = new Map(activeBookings.map(b => [b.roomId, b]));
+
+      // Update room statuses
       const updatedRooms = roomList.map(room => {
-        const booking = activeBookings.find(b => b.roomId === room.id);
+        const booking = bookingMap.get(room.id);
         return booking ? { ...room, status: 'occupied' as const } : room;
       });
 
@@ -174,7 +181,8 @@ const RoomMatrix = () => {
       setBookings(bookingsWithRoomNumber);
 
       updateStayValidUntil();
-      await calculatePendingAmounts(activeBookings);
+      // Calculate pending amounts in background
+      calculatePendingAmounts(activeBookings);
     } catch (error) {
       toast.error('Failed to fetch data');
       console.error(error);
@@ -187,14 +195,23 @@ const RoomMatrix = () => {
     try {
       const pending: Record<string, number> = {};
 
-      for (const booking of bookingsList) {
-        const paymentsSnapshot = await getDocs(collection(db, 'checkins', booking.id, 'payments'));
-        const payments = paymentsSnapshot.docs.map(doc => doc.data());
+      // Batch fetch all payments and purchases in parallel
+      const paymentPromises = bookingsList.map(booking =>
+        getDocs(collection(db, 'checkins', booking.id, 'payments'))
+      );
 
-        const shopPurchasesSnapshot = await getDocs(
-          query(collection(db, 'purchases'), where('checkinId', '==', booking.id))
-        );
-        const purchases = shopPurchasesSnapshot.docs.map(doc => doc.data());
+      const purchasePromises = bookingsList.map(booking =>
+        getDocs(query(collection(db, 'purchases'), where('checkinId', '==', booking.id)))
+      );
+
+      const [paymentsResults, purchasesResults] = await Promise.all([
+        Promise.all(paymentPromises),
+        Promise.all(purchasePromises)
+      ]);
+
+      bookingsList.forEach((booking, index) => {
+        const payments = paymentsResults[index].docs.map(doc => doc.data());
+        const purchases = purchasesResults[index].docs.map(doc => doc.data());
 
         let totalRent = booking.rent;
         payments.forEach(p => {
@@ -209,7 +226,7 @@ const RoomMatrix = () => {
         const totalPaid = booking.initialPayment || 0;
 
         pending[booking.id] = Math.max(0, totalRent - totalPaid);
-      }
+      });
 
       setPendingAmounts(pending);
     } catch (error) {
@@ -500,21 +517,28 @@ const RoomMatrix = () => {
     }
   };
 
-  const getTotalShopPurchases = () => {
+  const getTotalShopPurchases = useMemo(() => {
     return shopPurchases.reduce((total, purchase) => total + purchase.amount, 0);
-  };
+  }, [shopPurchases]);
 
   const getTimeRemainingColor = (validUntil: string) => {
     if (!validUntil) return 'text-gray-600';
 
     const now = new Date();
+    // Parse the formatted date string properly
+    const parts = validUntil.split(',');
+    if (parts.length < 2) return 'text-gray-600';
+
     const validUntilDate = new Date(validUntil);
 
     if (isNaN(validUntilDate.getTime())) return 'text-gray-600';
 
-    const hoursRemaining = (validUntilDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const msRemaining = validUntilDate.getTime() - now.getTime();
 
-    if (hoursRemaining < 0) return 'text-red-600';
+    // Only show red when time is actually over
+    if (msRemaining < 0) return 'text-red-600';
+
+    const hoursRemaining = msRemaining / (1000 * 60 * 60);
     if (hoursRemaining < 6) return 'text-amber-600';
     return 'text-green-600';
   };
@@ -546,7 +570,7 @@ const RoomMatrix = () => {
                 <strong>Pending:</strong> ₹{Math.max(0, getTotalRentSoFar(selectedBooking) - getTotalPaidSoFar(selectedBooking))}
                 {shopPurchases.length > 0 && (
                   <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs">
-                    Includes ₹{getTotalShopPurchases()} shop purchases
+                    Includes ₹{getTotalShopPurchases} shop purchases
                   </span>
                 )}
               </p>
@@ -750,8 +774,8 @@ const RoomMatrix = () => {
                 {shopPurchases.length > 0 && (
                   <div className="mt-3 flex justify-end">
                     <div className="bg-gray-100 px-4 py-2 rounded text-sm">
-                      <span className="font-medium">Total Shop Purchases:</span> 
-                      <span className="ml-2 font-bold">₹{getTotalShopPurchases().toFixed(2)}</span>
+                      <span className="font-medium">Total Shop Purchases:</span>
+                      <span className="ml-2 font-bold">₹{getTotalShopPurchases.toFixed(2)}</span>
                     </div>
                   </div>
                 )}

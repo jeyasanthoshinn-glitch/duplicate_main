@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../firebase/config';
 import { collection, getDocs, addDoc, Timestamp, query, orderBy as firestoreOrderBy } from 'firebase/firestore';
 import { Calendar, DollarSign, CreditCard, Wallet, TrendingUp, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { DataService } from '../../services/dataService';
 
 type Payment = {
   id: string;
@@ -62,12 +63,24 @@ const NewPaymentsPage: React.FC = () => {
     try {
       const paymentRecords: Payment[] = [];
 
-      const checkinsSnapshot = await getDocs(collection(db, 'checkins'));
+      // Fetch checkins and direct payments in parallel
+      const [checkinsSnapshot, directPaymentsSnapshot] = await Promise.all([
+        getDocs(collection(db, 'checkins')),
+        getDocs(collection(db, 'payments'))
+      ]);
 
-      for (const checkinDoc of checkinsSnapshot.docs) {
+      // Batch fetch all payments for all checkins in parallel
+      const paymentPromises = checkinsSnapshot.docs.map(checkinDoc =>
+        getDocs(collection(db, 'checkins', checkinDoc.id, 'payments'))
+      );
+
+      const paymentsSnapshots = await Promise.all(paymentPromises);
+
+      // Process checkin payments
+      checkinsSnapshot.docs.forEach((checkinDoc, index) => {
         const checkinData = checkinDoc.data();
+        const paymentsSnapshot = paymentsSnapshots[index];
 
-        const paymentsSnapshot = await getDocs(collection(db, 'checkins', checkinDoc.id, 'payments'));
         const additionalPayments = paymentsSnapshot.docs.map((payDoc) => {
           const payData = payDoc.data();
           return {
@@ -85,9 +98,9 @@ const NewPaymentsPage: React.FC = () => {
         });
 
         paymentRecords.push(...additionalPayments);
-      }
+      });
 
-      const directPaymentsSnapshot = await getDocs(collection(db, 'payments'));
+      // Process direct payments
       const directPayments = directPaymentsSnapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -132,11 +145,13 @@ const NewPaymentsPage: React.FC = () => {
 
   const calculatePendingAmounts = async () => {
     try {
-      const logsQuery = query(
-        collection(db, 'collection_logs'),
-        firestoreOrderBy('collectedAt', 'desc')
-      );
-      const logsSnapshot = await getDocs(logsQuery);
+      // Fetch collection logs, checkins, and direct payments in parallel
+      const [logsSnapshot, checkinsSnapshot, directPaymentsSnapshot] = await Promise.all([
+        getDocs(query(collection(db, 'collection_logs'), firestoreOrderBy('collectedAt', 'desc'))),
+        getDocs(collection(db, 'checkins')),
+        getDocs(collection(db, 'payments'))
+      ]);
+
       const logs = logsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -146,13 +161,18 @@ const NewPaymentsPage: React.FC = () => {
         ? logs[0].collectedAt.toDate()
         : null;
 
-      const checkinsSnapshot = await getDocs(collection(db, 'checkins'));
       let totalPendingCash = 0;
       let totalPendingGpay = 0;
 
-      for (const checkinDoc of checkinsSnapshot.docs) {
-        const paymentsSnapshot = await getDocs(collection(db, 'checkins', checkinDoc.id, 'payments'));
+      // Batch fetch all checkin payments in parallel
+      const paymentPromises = checkinsSnapshot.docs.map(checkinDoc =>
+        getDocs(collection(db, 'checkins', checkinDoc.id, 'payments'))
+      );
 
+      const paymentsSnapshots = await Promise.all(paymentPromises);
+
+      // Process checkin payments
+      paymentsSnapshots.forEach(paymentsSnapshot => {
         paymentsSnapshot.docs.forEach(payDoc => {
           const payment = payDoc.data();
           const amount = parseFloat(payment.amount) || 0;
@@ -168,9 +188,9 @@ const NewPaymentsPage: React.FC = () => {
             }
           }
         });
-      }
+      });
 
-      const directPaymentsSnapshot = await getDocs(collection(db, 'payments'));
+      // Process direct payments
       directPaymentsSnapshot.docs.forEach(payDoc => {
         const payment = payDoc.data();
         const amount = parseFloat(payment.amount) || 0;
@@ -232,7 +252,7 @@ const NewPaymentsPage: React.FC = () => {
     }
   };
 
-  const getDailyPayments = (date: Date) => {
+  const getDailyPayments = useMemo(() => (date: Date) => {
     return payments.filter(payment => {
       const paymentDate = payment.timestamp instanceof Date ?
         payment.timestamp :
@@ -244,21 +264,21 @@ const NewPaymentsPage: React.FC = () => {
         paymentDate.getFullYear() === date.getFullYear()
       );
     });
-  };
+  }, [payments]);
 
-  const getDailyCash = (date: Date) => {
+  const getDailyCash = useMemo(() => (date: Date) => {
     const dailyPayments = getDailyPayments(date);
     return dailyPayments
       .filter(p => (p.mode === 'cash' || p.paymentMode === 'cash') && p.amount > 0)
       .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-  };
+  }, [getDailyPayments]);
 
-  const getDailyGpay = (date: Date) => {
+  const getDailyGpay = useMemo(() => (date: Date) => {
     const dailyPayments = getDailyPayments(date);
     return dailyPayments
       .filter(p => (p.mode === 'gpay' || p.paymentMode === 'gpay') && p.amount > 0)
       .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-  };
+  }, [getDailyPayments]);
 
   const generateCalendarDays = () => {
     const year = currentMonth.getFullYear();
