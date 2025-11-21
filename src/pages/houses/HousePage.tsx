@@ -318,7 +318,6 @@ const HousePage = () => {
 
       const bookingRef = doc(db, 'house_bookings', selectedBooking.id);
       const currentExtensions = selectedBooking.extensions || [];
-      const currentPending = selectedBooking.pendingAmount || 0;
 
       await addDoc(collection(db, 'house_bookings', selectedBooking.id, 'payments'), {
         amount: rentForDays,
@@ -332,8 +331,7 @@ const HousePage = () => {
         extensions: [...currentExtensions, extensionData],
         checkOutDate: Timestamp.fromDate(newCheckOutDate),
         daysOfStay: selectedBooking.daysOfStay + extendForm.additionalDays,
-        rent: selectedBooking.rent + rentForDays,
-        pendingAmount: currentPending + rentForDays
+        rent: selectedBooking.rent + rentForDays
       });
 
       toast.success('Stay extended successfully!');
@@ -345,8 +343,7 @@ const HousePage = () => {
         extensions: [...currentExtensions, extensionData],
         checkOutDate: Timestamp.fromDate(newCheckOutDate),
         daysOfStay: selectedBooking.daysOfStay + extendForm.additionalDays,
-        rent: selectedBooking.rent + rentForDays,
-        pendingAmount: currentPending + rentForDays
+        rent: selectedBooking.rent + rentForDays
       };
       setSelectedBooking(updatedBooking);
       await fetchPaymentHistory(selectedBooking.id);
@@ -375,7 +372,6 @@ const HousePage = () => {
 
       const bookingRef = doc(db, 'house_bookings', selectedBooking.id);
       const currentExtraFees = selectedBooking.extraFees || [];
-      const currentPending = selectedBooking.pendingAmount || 0;
 
       await addDoc(collection(db, 'house_bookings', selectedBooking.id, 'payments'), {
         amount: amount,
@@ -387,8 +383,7 @@ const HousePage = () => {
 
       await updateDoc(bookingRef, {
         extraFees: [...currentExtraFees, extraFeeData],
-        rent: selectedBooking.rent + amount,
-        pendingAmount: currentPending + amount
+        rent: selectedBooking.rent + amount
       });
 
       toast.success('Extra fee added successfully!');
@@ -398,8 +393,7 @@ const HousePage = () => {
       const updatedBooking = {
         ...selectedBooking,
         extraFees: [...currentExtraFees, extraFeeData],
-        rent: selectedBooking.rent + amount,
-        pendingAmount: currentPending + amount
+        rent: selectedBooking.rent + amount
       };
       setSelectedBooking(updatedBooking);
       await fetchPaymentHistory(selectedBooking.id);

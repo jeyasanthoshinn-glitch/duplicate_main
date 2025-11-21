@@ -277,30 +277,43 @@ const RoomMatrix = () => {
     try {
       const booking = bookings.find(b => b.id === bookingId);
       if (!booking) return;
-      
+
       const paymentRef = collection(db, 'checkins', bookingId, 'payments');
       const q = query(paymentRef, orderBy('timestamp', 'asc'));
       const snapshot = await getDocs(q);
-      const history = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
+      const history = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
       })) as PaymentEntry[];
 
-      // Initial rent entry (original check-in)
+      const shopPurchasesData = await ShopPurchaseService.getPurchasesByCheckin(bookingId);
+      setShopPurchases(shopPurchasesData as ShopPurchase[]);
+
+      let totalRent = booking.rent;
+      history.forEach(p => {
+        if (p.type === 'extension') {
+          totalRent += p.amount;
+        }
+      });
+
+      const shopTotal = (shopPurchasesData as ShopPurchase[]).reduce((sum, p) => sum + (p.amount || 0), 0);
+      totalRent += shopTotal;
+
+      const totalPaid = booking.initialPayment || 0;
+      const calculatedPending = Math.max(0, totalRent - totalPaid);
+      setPendingAmounts(prev => ({ ...prev, [bookingId]: calculatedPending }));
+
       const initialRent = booking.rent - getExtensionPaymentsTotal(history);
       const rentEntry: PaymentEntry = {
         id: 'rent-entry',
-        amount: initialRent, // Only include the initial rent, not extensions
+        amount: initialRent,
         mode: 'n/a',
         type: 'Rent (Check-in)',
         timestamp: booking.checkedInAt || Timestamp.now(),
       };
 
-      const shopPurchases = await ShopPurchaseService.getPurchasesByCheckin(bookingId);
-      setShopPurchases(shopPurchases as ShopPurchase[]);
-
       const initialPayment = history.find(p => p.type === 'initial');
-      
+
       const advanceEntry = initialPayment || {
         id: 'advance-entry',
         amount: booking.initialPayment,

@@ -316,7 +316,42 @@ const BookedRooms: React.FC = () => {
                   </div>
                   <div className="flex justify-between pt-2 border-t">
                     <span className="text-gray-600">Total Rent:</span>
-                    <span className="font-medium">₹{selectedCustomer.rent.toFixed(2)}</span>
+                    <span className="font-medium">₹{(() => {
+                      let totalRent = selectedCustomer.rent;
+                      paymentHistory.forEach(p => {
+                        if (p.type === 'extension' || p.type === 'shop-purchase') {
+                          totalRent += Math.abs(p.amount);
+                        }
+                      });
+                      return totalRent.toFixed(2);
+                    })()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total Paid:</span>
+                    <span className="font-medium">₹{(() => {
+                      const cashGpayPayments = paymentHistory.filter(entry =>
+                        (entry.type === 'initial' || entry.type === 'advance') &&
+                        (entry.mode === 'cash' || entry.mode === 'gpay')
+                      );
+                      return cashGpayPayments.reduce((total, p) => total + p.amount, 0).toFixed(2);
+                    })()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Pending:</span>
+                    <span className="font-medium text-red-600">₹{(() => {
+                      let totalRent = selectedCustomer.rent;
+                      paymentHistory.forEach(p => {
+                        if (p.type === 'extension' || p.type === 'shop-purchase') {
+                          totalRent += Math.abs(p.amount);
+                        }
+                      });
+                      const cashGpayPayments = paymentHistory.filter(entry =>
+                        (entry.type === 'initial' || entry.type === 'advance') &&
+                        (entry.mode === 'cash' || entry.mode === 'gpay')
+                      );
+                      const totalPaid = cashGpayPayments.reduce((total, p) => total + p.amount, 0);
+                      return Math.max(0, totalRent - totalPaid).toFixed(2);
+                    })()}</span>
                   </div>
                 </div>
 
@@ -353,55 +388,77 @@ const BookedRooms: React.FC = () => {
 
                 {/* Payment History Table */}
                 {activeTab === 'payments' && (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-64 border rounded">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            Date
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            Type
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                            Mode
-                          </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                            Amount
-                          </th>
+                          <th className="p-2 text-left text-xs font-medium">Date</th>
+                          <th className="p-2 text-left text-xs font-medium">Time</th>
+                          <th className="p-2 text-left text-xs font-medium">Process</th>
+                          <th className="p-2 text-left text-xs font-medium">Cash</th>
+                          <th className="p-2 text-left text-xs font-medium">Gpay</th>
+                          <th className="p-2 text-left text-xs font-medium">Rent</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {paymentHistory.map((entry) => {
+                      <tbody>
+                        {paymentHistory.map((entry, i) => {
                           const dt = entry.timestamp?.toDate?.();
-                          const date = dt ? format(new Date(dt), 'dd MMM yyyy') : '—';
-                          const time = dt ? format(new Date(dt), 'HH:mm') : '';
+                          const date = dt ? new Date(dt).toLocaleDateString('en-IN') : '—';
+                          const time = dt ? new Date(dt).toLocaleTimeString('en-IN', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : '—';
+
+                          let process = '';
+                          let rentAmount = null;
+                          let cashAmount = null;
+                          let gpayAmount = null;
+
+                          switch (entry.type) {
+                            case 'Rent (Check-in)':
+                              process = 'Check-in';
+                              rentAmount = entry.amount;
+                              break;
+                            case 'extension':
+                              process = 'Extension';
+                              rentAmount = entry.amount;
+                              break;
+                            case 'initial':
+                              process = 'Initial Payment';
+                              if (entry.mode === 'cash') cashAmount = entry.amount;
+                              if (entry.mode === 'gpay') gpayAmount = entry.amount;
+                              break;
+                            case 'advance':
+                              process = 'Additional Payment';
+                              if (entry.mode === 'cash') cashAmount = entry.amount;
+                              if (entry.mode === 'gpay') gpayAmount = entry.amount;
+                              break;
+                            case 'shop-purchase':
+                              process = 'Shop Purchase';
+                              rentAmount = Math.abs(entry.amount);
+                              break;
+                            default:
+                              process = entry.type || 'Transaction';
+                          }
 
                           return (
-                            <tr key={entry.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm text-gray-900">
-                                {date} {time}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {entry.type}
-                              </td>
-                              <td className="px-4 py-3 text-sm">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  entry.mode === 'cash'
-                                    ? 'bg-green-100 text-green-800'
-                                    : entry.mode === 'gpay'
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {entry.mode}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-sm font-medium text-right text-gray-900">
-                                ₹{Math.abs(entry.amount).toFixed(2)}
-                              </td>
+                            <tr key={i} className="border-t hover:bg-gray-50">
+                              <td className="p-2 text-xs">{date}</td>
+                              <td className="p-2 text-xs">{time}</td>
+                              <td className="p-2 text-xs font-medium">{process}</td>
+                              <td className="p-2 text-xs text-green-600">{cashAmount ? `₹${cashAmount.toFixed(2)}` : '—'}</td>
+                              <td className="p-2 text-xs text-blue-600">{gpayAmount ? `₹${gpayAmount.toFixed(2)}` : '—'}</td>
+                              <td className="p-2 text-xs text-gray-700">{rentAmount ? `₹${rentAmount.toFixed(2)}` : '—'}</td>
                             </tr>
                           );
                         })}
+                        {paymentHistory.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="p-2 text-center text-gray-500 text-xs">
+                              No payment history found.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
