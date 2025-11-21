@@ -769,6 +769,7 @@ const RoomMatrix = () => {
                             <div className="mt-1 text-xs font-semibold text-red-600">
                               Pending: ₹{Math.max(0, getTotalRentSoFar(selectedBooking) - getTotalPaidSoFar(selectedBooking))}
                             </div>
+            
                           )}
                         </>
                       )}
