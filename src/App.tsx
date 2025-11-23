@@ -39,7 +39,7 @@ function App() {
               <DashboardLayout />
             </PrivateRoute>
           }>
-            <Route index element={<Dashboard />} />
+            <Route index element={<RoomMatrix />} />
             <Route path="rooms" element={<RoomList />} />
             <Route path="rooms/matrix" element={<RoomMatrix />} />
             <Route path="rooms/add" element={<AddRoom />} />
