@@ -4,14 +4,15 @@ import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 //THIS IS THE MAIN DB
   const firebaseConfig = {
-    apiKey: "AIzaSyBGCYJD1eS6EiTrOp6C112r2QjkEhyZENw",
-    authDomain: "jeya-santhosh-inn.firebaseapp.com",
-    projectId: "jeya-santhosh-inn",
-    storageBucket: "jeya-santhosh-inn.firebasestorage.app",
-    messagingSenderId: "1063356009476",
-    appId: "1:1063356009476:web:2ef151147118171a423951",
-    measurementId: "G-PF9YS4SB7M"
+    apiKey: "AIzaSyCmBdthR6ikDTR1VvmPkhpaQ9pYQjQw-Wg",
+    authDomain: "jeya-santhosh-inn-b02dd.firebaseapp.com",
+    projectId: "jeya-santhosh-inn-b02dd",
+    storageBucket: "jeya-santhosh-inn-b02dd.firebasestorage.app",
+    messagingSenderId: "330001746216",
+    appId: "1:330001746216:web:9b384a5851afaf0cae681d",
+    measurementId: "G-WCV81FB8HH"
   };
+
 
 
 //TESTING
