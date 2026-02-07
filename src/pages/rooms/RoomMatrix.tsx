@@ -225,9 +225,7 @@ const RoomMatrix = () => {
         totalRent += shopTotal;
 
         // Calculate total paid from actual payment records (initial + advance payments)
-        const totalPaid = payments
-          .filter(p => (p.type === 'initial' || p.type === 'advance') && (p.mode === 'cash' || p.mode === 'gpay'))
-          .reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalPaid = booking.initialPayment || 0;
 
         pending[booking.id] = Math.max(0, totalRent - totalPaid);
       });
