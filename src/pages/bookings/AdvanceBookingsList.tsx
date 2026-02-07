@@ -160,6 +160,8 @@ const AdvanceBookingsList = () => {
         const room = availableRooms.find(r => r.id === roomId);
         if (!room) continue;
 
+        const initialPaymentAmount = booking.advance_amount / selectedRooms.length;
+
         // Create check-in record
         const checkinRef = await addDoc(collection(db, 'checkins'), {
           guestName: booking.name,
@@ -168,13 +170,22 @@ const AdvanceBookingsList = () => {
           numberOfGuests: 1,
           acType: booking.room_type,
           rent: booking.price_per_room,
-          initialPayment: booking.advance_amount / selectedRooms.length,
+          initialPayment: initialPaymentAmount,
           paymentMode: booking.payment_mode || 'cash',
           roomId: room.id,
           roomNumber: room.roomNumber,
           isCheckedOut: false,
           checkedInAt: Timestamp.now(),
           advanceBookingId: booking.id
+        });
+
+        // Create initial payment record
+        await addDoc(collection(db, 'checkins', checkinRef.id, 'payments'), {
+          amount: initialPaymentAmount,
+          mode: booking.payment_mode || 'cash',
+          type: 'initial',
+          timestamp: Timestamp.now(),
+          description: 'Initial advance payment at check-in'
         });
 
         // Update room status to occupied
