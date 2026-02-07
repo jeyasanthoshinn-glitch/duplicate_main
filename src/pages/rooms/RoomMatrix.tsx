@@ -376,6 +376,7 @@ const RoomMatrix = () => {
         timestamp: Timestamp.now(),
         description: 'Additional payment'
       });
+      
       await updateDoc(doc(db, 'checkins', bookingId), {
         initialPayment: increment(amount),
       });
